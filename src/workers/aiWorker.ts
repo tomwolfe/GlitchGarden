@@ -1,13 +1,11 @@
 /**
  * AI Worker - Real Local AI with Transformers.js
- * Uses @huggingface/transformers for in-browser text generation
+ * Uses @xenova/transformers for in-browser text generation
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { pipeline, env } from '@xenova/transformers';
 import { generateSvgBlob, CREATURE_NAMES } from './shared';
-
-// Transformers.js is loaded from CDN at runtime
-let transformers: any = null;
 
 type AIRequestType = 'init' | 'generate' | 'cancel' | 'clearCache';
 
@@ -43,34 +41,17 @@ let cancellationRequested = false;
 let transformersLoaded = false;
 
 /**
- * Load transformers.js from CDN using dynamic import
- * Uses the web-specific build for browser compatibility
+ * Configure transformers.js environment
  */
-async function loadTransformers(): Promise<void> {
+function configureTransformers(): void {
   if (transformersLoaded) {
     return;
   }
 
-  try {
-    const cdnUrl = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.web.min.js';
-
-    const transformersModule = await import(cdnUrl);
-    transformers = transformersModule;
-
-    if (!transformers) {
-      throw new Error('Transformers library not loaded');
-    }
-
-    if (transformers.env) {
-      transformers.env.allowLocalModels = false;
-      transformers.env.useBrowserCache = true;
-    }
-
-    transformersLoaded = true;
-  } catch (error) {
-    console.error('Failed to load transformers.js:', error);
-    throw new Error(`Failed to load AI library. Please ensure you have a stable internet connection. If the problem persists, try using mock mode.`);
-  }
+  env.allowLocalModels = false;
+  env.useBrowserCache = true;
+  
+  transformersLoaded = true;
 }
 
 /**
@@ -93,7 +74,7 @@ async function loadModel(): Promise<any> {
   modelLoading = true;
 
   try {
-    await loadTransformers();
+    configureTransformers();
 
     self.postMessage({
       type: 'modelProgress',
@@ -106,8 +87,8 @@ async function loadModel(): Promise<any> {
     // Model configuration - using TinyLlama for speed
     const MODEL_ID = 'Xenova/TinyLlama-1.1B-Chat-v1.0';
 
-    textGenerator = await transformers.pipeline('text-generation', MODEL_ID, {
-      progress_callback: (progress: { status: string; loaded: number; total: number }) => {
+    textGenerator = await pipeline('text-generation', MODEL_ID, {
+      progress_callback: (progress: any) => {
         if (progress.status === 'progress') {
           const percent = Math.round((progress.loaded / progress.total) * 100);
           self.postMessage({
@@ -304,23 +285,24 @@ self.onmessage = async (event: MessageEvent<AIRequest>) => {
   try {
     if (type === 'init') {
       // Pre-load transformers.js and model in the background
-      loadTransformers().then(() => {
-        loadModel().catch(error => {
+      try {
+        configureTransformers();
+        loadModel().catch((error: Error) => {
           self.postMessage({
             type: 'error',
             payload: {
-              error: `Failed to load model: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              error: `Failed to load model: ${error.message || 'Unknown error'}`,
             },
           } as AIResponse);
         });
-      }).catch(error => {
+      } catch (error) {
         self.postMessage({
           type: 'error',
           payload: {
             error: `Failed to initialize AI: ${error instanceof Error ? error.message : 'Unknown error'}`,
           },
         } as AIResponse);
-      });
+      }
 
       self.postMessage({
         type: 'ready',

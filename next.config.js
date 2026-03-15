@@ -49,7 +49,7 @@ const nextConfig = {
   images: {
     unoptimized: true, // Required for PWA offline support
   },
-  webpack: (config, { isServer, webpack }) => {
+  webpack: (config, { isServer }) => {
     if (!isServer) {
       // Enable async WebAssembly for transformers.js on client side
       config.experiments = {
@@ -65,23 +65,30 @@ const nextConfig = {
         url: false,
       };
 
-      // Exclude native bindings from client bundle
-      config.module = {
-        ...config.module,
-        exprContextCritical: false,
+      // Prevent bundling of node-specific onnxruntime - use browser version
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        'onnxruntime-node': false,
       };
+
+      // Ignore native node modules
+      config.module.rules.push({
+        test: /node_modules\/onnxruntime-node/,
+        use: 'empty',
+      });
 
       // Ignore native modules that can't run in browser
       config.ignoreWarnings = [
         ...(config.ignoreWarnings || []),
         /Critical dependency:/,
         /onnxruntime-node/,
+        /native module/,
       ];
     } else {
       // On server, exclude transformers.js since it's only used in browser
       config.externals = config.externals || [];
-      if (!config.externals.includes('@huggingface/transformers')) {
-        config.externals.push('@huggingface/transformers');
+      if (!config.externals.includes('@xenova/transformers')) {
+        config.externals.push('@xenova/transformers');
       }
     }
 
