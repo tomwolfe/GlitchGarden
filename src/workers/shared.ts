@@ -196,8 +196,8 @@ export function generateStory(silly: number, spooky: number, sleepy: number): st
  * Analyze canvas data to extract complexity metrics
  * Shared between both workers to ensure consistent behavior
  */
-export function analyzeCanvasData(canvasData: string | null): CanvasAnalysis {
-  if (!canvasData) {
+export function analyzeCanvasData(canvasData: string | null | undefined): CanvasAnalysis {
+  if (!canvasData || typeof canvasData !== 'string') {
     return { complexity: 0, description: 'no drawing' };
   }
 
