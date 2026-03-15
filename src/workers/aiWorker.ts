@@ -1,12 +1,13 @@
 /**
  * AI Worker - Real Local AI with Transformers.js
  * Uses @huggingface/transformers for in-browser text generation
- *
- * Note: Transformers.js is loaded from CDN at runtime to avoid Next.js bundling issues.
- * See: https://huggingface.co/docs/transformers.js/guides/nextjs
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { generateSvgBlob, CREATURE_NAMES } from './shared';
+
+// Transformers.js is loaded from CDN at runtime
+let transformers: any = null;
 
 type AIRequestType = 'init' | 'generate' | 'cancel' | 'clearCache';
 
@@ -36,20 +37,14 @@ interface AIResponse {
 }
 
 // Singleton pattern for model loading
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let textGenerator: any = null;
 let modelLoading = false;
 let cancellationRequested = false;
 let transformersLoaded = false;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let pipeline: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let env: any = null;
 
 /**
- * Load transformers.js from CDN using dynamic import
- * This avoids webpack bundling issues with Next.js
- * Tries multiple CDNs for reliability
+ * Load transformers.js from CDN using importScripts
+ * Uses the web-specific build for browser compatibility
  */
 async function loadTransformers(): Promise<void> {
   if (transformersLoaded) {
@@ -57,58 +52,35 @@ async function loadTransformers(): Promise<void> {
   }
 
   try {
-    // List of CDN URLs to try in order of preference
-    const cdnUrls = [
-      'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0/dist/transformers.min.js',
-      'https://unpkg.com/@huggingface/transformers@3.0.0/dist/transformers.min.js',
-      'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0/dist/transformers.js',
-    ];
+    // Use the web-specific minified build from jsDelivr
+    const cdnUrl = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0/dist/transformers.web.min.js';
 
-    let lastError: unknown = null;
-    let loaded = false;
-
-    // Try dynamic import first (works better with modern workers)
-    for (const url of cdnUrls) {
-      try {
-        // Use dynamic import instead of importScripts for better compatibility
-        await import(url);
-        loaded = true;
-        break;
-      } catch (e) {
-        lastError = e;
-        console.warn(`Failed to load transformers.js from ${url}, trying next CDN...`);
+    // Load via fetch and eval for better compatibility with modern workers
+    try {
+      const response = await fetch(cdnUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch transformers.js: ${response.status} ${response.statusText}`);
       }
+      const code = await response.text();
+      // eslint-disable-next-line no-eval
+      eval(code);
+      transformers = (self as any).transformers;
+    } catch (fetchError) {
+      console.warn('Fetch failed, trying importScripts:', fetchError);
+      // Fallback to importScripts
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (self as any).importScripts(cdnUrl);
+      transformers = (self as any).transformers;
     }
 
-    // Fallback to importScripts if dynamic import fails
-    if (!loaded) {
-      for (const url of cdnUrls) {
-        try {
-          // @ts-expect-error - importScripts is available in web workers
-          importScripts(url);
-          loaded = true;
-          break;
-        } catch (e) {
-          lastError = e;
-          console.warn(`Failed to load transformers.js via importScripts from ${url}, trying next CDN...`);
-        }
-      }
+    if (!transformers) {
+      throw new Error('Transformers library not loaded');
     }
-
-    if (!loaded) {
-      throw lastError || new Error('Failed to load transformers.js from all CDNs');
-    }
-
-    // @ts-expect-error - transformers is loaded into global scope by the CDN script
-    const { pipeline: pipe, env: environment } = self.transformers;
-
-    pipeline = pipe;
-    env = environment;
 
     // Configure environment for browser caching
-    if (env) {
-      env.allowLocalModels = false;
-      env.useBrowserCache = true;
+    if (transformers.env) {
+      transformers.env.allowLocalModels = false;
+      transformers.env.useBrowserCache = true;
     }
 
     transformersLoaded = true;
@@ -151,7 +123,7 @@ async function loadModel(): Promise<any> {
     // Model configuration - using TinyLlama for speed
     const MODEL_ID = 'Xenova/TinyLlama-1.1B-Chat-v1.0';
 
-    textGenerator = await pipeline('text-generation', MODEL_ID, {
+    textGenerator = await transformers.pipeline('text-generation', MODEL_ID, {
       progress_callback: (progress: { status: string; loaded: number; total: number }) => {
         if (progress.status === 'progress') {
           const percent = Math.round((progress.loaded / progress.total) * 100);
