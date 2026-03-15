@@ -81,8 +81,8 @@ async function loadModel(): Promise<Awaited<ReturnType<typeof pipeline>>> {
       },
     } satisfies WorkerResponse);
 
-    // Model configuration - using TinyLlama for speed
-    const MODEL_ID = 'Xenova/TinyLlama-1.1B-Chat-v1.0';
+    // Model configuration - using Qwen3.5-0.8B for better stability
+    const MODEL_ID = 'Qwen/Qwen3.5-0.8B';
 
     textGenerator = await pipeline('text-generation', MODEL_ID, {
       progress_callback: (progress: TransformersProgress) => {
@@ -153,8 +153,13 @@ function buildPrompt(
   const personality =
     traits.length > 0 ? traits.join(', ') : 'ordinary';
 
-  // Build the prompt
-  const prompt = `You are a whimsical children's story writer. Write a short, magical story (2-3 sentences) about a ${personality} creature called a "${creature}". The user drew ${canvasAnalysis.description} which inspired this story. Make it fun, imaginative, and suitable for children. Start with "Once upon a time" or similar magical opening.`;
+  // Build the prompt using Qwen-friendly format
+  const prompt = `<|im_start|>system
+You are a whimsical children's story writer. Write short, magical stories (2-3 sentences) for children.<|im_end|>
+<|im_start|>user
+Write a story about a ${personality} creature called a "${creature}". The user drew ${canvasAnalysis.description} which inspired this story. Make it fun and imaginative. Start with "Once upon a time" or similar.<|im_end|>
+<|im_start|>assistant
+`;
 
   return prompt;
 }
@@ -211,12 +216,13 @@ async function generateStoryWithAI(
       // Using safer parameters to avoid RangeError: offset is out of bounds
       // @ts-expect-error - transformers.js has complex union types that are incompatible
       const output = await generator(prompt, {
-        max_new_tokens: 50, // Reduced from 60 to prevent memory issues
-        temperature: 0.8, // Fixed temperature for stability
-        top_p: 0.95,
-        top_k: 40, // Add top_k sampling for better control
+        max_new_tokens: 40, // Reduced for smaller model
+        temperature: 0.7,
+        top_p: 0.9,
+        top_k: 30,
         do_sample: true,
-        repetition_penalty: 1.1, // Prevent repetitive output
+        repetition_penalty: 1.2,
+        chat_template: 'chatml', // Use ChatML format for Qwen
       });
 
       // Check cancellation after generation completes
