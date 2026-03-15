@@ -71,7 +71,6 @@ async function loadTransformers(): Promise<void> {
     for (const url of cdnUrls) {
       try {
         // Use dynamic import instead of importScripts for better compatibility
-        // @ts-expect-error - dynamic import in worker
         await import(url);
         loaded = true;
         break;
