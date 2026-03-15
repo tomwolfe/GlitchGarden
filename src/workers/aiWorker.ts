@@ -45,7 +45,9 @@ function configureTransformers(): void {
   }
 
   env.allowLocalModels = false;
-  env.useBrowserCache = true;
+  // Disable browser cache to avoid corrupted cache issues
+  // Cache will be cleared and reloaded on next run
+  env.useBrowserCache = false;
 
   transformersLoaded = true;
 }
@@ -84,6 +86,20 @@ async function loadModel(): Promise<Awaited<ReturnType<typeof pipeline>>> {
     // Model configuration - using SmolLM-135M for stability in browser
     // Use the ONNX community version which has the proper ONNX exported files
     const MODEL_ID = 'onnx-community/SmolLM-135M-Instruct-ONNX';
+
+    // Clear browser cache first to avoid corrupted cache issues
+    if ('caches' in self) {
+      try {
+        const cacheNames = await caches.keys();
+        for (const cacheName of cacheNames) {
+          if (cacheName.includes('transformers')) {
+            await caches.delete(cacheName);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to clear transformers cache:', e);
+      }
+    }
 
     textGenerator = await pipeline('text-generation', MODEL_ID, {
       progress_callback: (progress: TransformersProgress) => {
