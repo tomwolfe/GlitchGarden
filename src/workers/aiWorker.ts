@@ -47,8 +47,9 @@ let pipeline: any = null;
 let env: any = null;
 
 /**
- * Load transformers.js from CDN using importScripts
+ * Load transformers.js from CDN using dynamic import
  * This avoids webpack bundling issues with Next.js
+ * Tries multiple CDNs for reliability
  */
 async function loadTransformers(): Promise<void> {
   if (transformersLoaded) {
@@ -56,10 +57,48 @@ async function loadTransformers(): Promise<void> {
   }
 
   try {
-    // Load transformers.js from CDN - this is the recommended approach for Next.js
-    // Using unpkg as an alternative to jsdelivr
-    // @ts-expect-error - importScripts is available in web workers
-    importScripts('https://unpkg.com/@huggingface/transformers@3.0.0/dist/transformers.min.js');
+    // List of CDN URLs to try in order of preference
+    const cdnUrls = [
+      'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0/dist/transformers.min.js',
+      'https://unpkg.com/@huggingface/transformers@3.0.0/dist/transformers.min.js',
+      'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0/dist/transformers.js',
+    ];
+
+    let lastError: unknown = null;
+    let loaded = false;
+
+    // Try dynamic import first (works better with modern workers)
+    for (const url of cdnUrls) {
+      try {
+        // Use dynamic import instead of importScripts for better compatibility
+        // @ts-expect-error - dynamic import in worker
+        await import(url);
+        loaded = true;
+        break;
+      } catch (e) {
+        lastError = e;
+        console.warn(`Failed to load transformers.js from ${url}, trying next CDN...`);
+      }
+    }
+
+    // Fallback to importScripts if dynamic import fails
+    if (!loaded) {
+      for (const url of cdnUrls) {
+        try {
+          // @ts-expect-error - importScripts is available in web workers
+          importScripts(url);
+          loaded = true;
+          break;
+        } catch (e) {
+          lastError = e;
+          console.warn(`Failed to load transformers.js via importScripts from ${url}, trying next CDN...`);
+        }
+      }
+    }
+
+    if (!loaded) {
+      throw lastError || new Error('Failed to load transformers.js from all CDNs');
+    }
 
     // @ts-expect-error - transformers is loaded into global scope by the CDN script
     const { pipeline: pipe, env: environment } = self.transformers;
