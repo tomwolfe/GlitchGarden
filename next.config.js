@@ -20,10 +20,24 @@ const withPWA = require('next-pwa')({
       },
     },
     {
-      urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/@huggingface\/transformers.*/i,
+      urlPattern: /^https:\/\/unpkg\.com\/@huggingface\/transformers.*/i,
       handler: 'CacheFirst',
       options: {
         cacheName: 'transformers-cdn-cache',
+        expiration: {
+          maxEntries: 10,
+          maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
+    {
+      urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/@huggingface\/transformers.*/i,
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'transformers-jsdelivr-cache',
         expiration: {
           maxEntries: 10,
           maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
@@ -60,18 +74,13 @@ const nextConfig = {
         config.externals.push('@huggingface/transformers');
       }
     }
-    // Enable async WebAssembly
+    
+    // Enable async WebAssembly for transformers.js
     config.experiments = {
       ...config.experiments,
       asyncWebAssembly: true,
     };
-    
-    // Add CDN external for transformers.js to prevent bundling
-    config.externals = config.externals || [];
-    config.externals.push(
-      '@huggingface/transformers'
-    );
-    
+
     return config;
   },
 };

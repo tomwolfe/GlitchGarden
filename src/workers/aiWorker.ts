@@ -1,7 +1,7 @@
 /**
  * AI Worker - Real Local AI with Transformers.js
  * Uses @huggingface/transformers for in-browser text generation
- * 
+ *
  * Note: Transformers.js is loaded from CDN at runtime to avoid Next.js bundling issues.
  * See: https://huggingface.co/docs/transformers.js/guides/nextjs
  */
@@ -57,25 +57,26 @@ async function loadTransformers(): Promise<void> {
 
   try {
     // Load transformers.js from CDN - this is the recommended approach for Next.js
+    // Using unpkg as an alternative to jsdelivr
     // @ts-expect-error - importScripts is available in web workers
-    importScripts('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0/dist/transformers.min.js');
-    
+    importScripts('https://unpkg.com/@huggingface/transformers@3.0.0/dist/transformers.min.js');
+
     // @ts-expect-error - transformers is loaded into global scope by the CDN script
     const { pipeline: pipe, env: environment } = self.transformers;
-    
+
     pipeline = pipe;
     env = environment;
-    
+
     // Configure environment for browser caching
     if (env) {
       env.allowLocalModels = false;
       env.useBrowserCache = true;
     }
-    
+
     transformersLoaded = true;
   } catch (error) {
     console.error('Failed to load transformers.js:', error);
-    throw new Error(`Failed to load AI library. Please ensure you have a stable internet connection.`);
+    throw new Error(`Failed to load AI library. Please ensure you have a stable internet connection. If the problem persists, try using mock mode.`);
   }
 }
 
