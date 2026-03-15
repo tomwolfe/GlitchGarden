@@ -32,7 +32,13 @@ export const CREATURE_NAMES = [
 ];
 
 // Generate SVG blob with random colors
-export function generateSvgBlob(silly: number, spooky: number, sleepy: number): string {
+// Optional canvasComplexity parameter (0-100) influences the creature's shape
+export function generateSvgBlob(
+  silly: number, 
+  spooky: number, 
+  sleepy: number,
+  canvasComplexity: number = 0
+): string {
   const size = 512;
   const colors: string[] = [];
 
@@ -44,16 +50,22 @@ export function generateSvgBlob(silly: number, spooky: number, sleepy: number): 
   // Default colors if all low
   if (colors.length === 0) colors.push('#FDE68A', '#D8B4FE', '#BAE6FD');
 
-  // Generate random blob path
+  // Generate blob path influenced by canvas complexity
   const points = [];
-  const numPoints = 8 + Math.floor(Math.random() * 4);
+  // Canvas complexity affects the number of points (more complex = more detailed shape)
+  const basePoints = 8 + Math.floor(canvasComplexity / 12); // 8-16 points based on complexity
+  const numPoints = basePoints + Math.floor(Math.random() * 4);
   const centerX = size / 2;
   const centerY = size / 2;
-  const baseRadius = (size / 3) + (Math.random() * 50);
+  // Canvas complexity also affects the base size (more complex = larger creature)
+  const sizeMultiplier = 1 + (canvasComplexity / 200); // Up to 1.5x larger
+  const baseRadius = (size / 3) * sizeMultiplier + (Math.random() * 50);
 
   for (let i = 0; i < numPoints; i++) {
     const angle = (i / numPoints) * Math.PI * 2;
-    const variance = 0.3 + (Math.random() * 0.4);
+    // Canvas complexity adds more variance to the shape
+    const varianceBase = 0.3 + (canvasComplexity / 200); // More variance with complex drawings
+    const variance = varianceBase + (Math.random() * 0.4);
     const radius = baseRadius * variance;
     const x = centerX + Math.cos(angle) * radius;
     const y = centerY + Math.sin(angle) * radius;

@@ -4,7 +4,7 @@
  * Used for UI testing before connecting real WebGPU models
  */
 
-import { generateSvgBlob, generateStory, STORY_TEMPLATES, CREATURE_NAMES } from './shared';
+import { generateSvgBlob, generateStory } from './shared';
 
 type MockRequestType = 'generate' | 'init' | 'cancel';
 
@@ -30,12 +30,43 @@ interface MockResponse {
   };
 }
 
+/**
+ * Analyze canvas data to extract complexity metrics
+ */
+function analyzeCanvasData(canvasData: string | null): number {
+  if (!canvasData) {
+    return 0;
+  }
+
+  try {
+    // Decode base64 to get image data
+    const base64Data = canvasData.split(',')[1];
+    if (!base64Data) {
+      return 0;
+    }
+
+    // Create a simple complexity metric based on data length
+    const dataLength = base64Data.length;
+    
+    // Normalize complexity to 0-100 scale
+    const minData = 1000;
+    const maxData = 15000;
+    const complexity = Math.min(100, Math.max(0, ((dataLength - minData) / (maxData - minData)) * 100));
+
+    return Math.round(complexity);
+  } catch {
+    return 0;
+  }
+}
+
 // Simulate async generation with progress updates
 async function simulateGeneration(
   sillyLevel: number,
   spookyLevel: number,
-  sleepyLevel: number
+  sleepyLevel: number,
+  canvasData: string | null = null
 ): Promise<{ story: string; image: string }> {
+  const canvasComplexity = analyzeCanvasData(canvasData);
   const totalSteps = 50;
 
   for (let i = 0; i <= totalSteps; i += 5) {
@@ -58,7 +89,7 @@ async function simulateGeneration(
   }
 
   const story = generateStory(sillyLevel, spookyLevel, sleepyLevel);
-  const image = generateSvgBlob(sillyLevel, spookyLevel, sleepyLevel);
+  const image = generateSvgBlob(sillyLevel, spookyLevel, sleepyLevel, canvasComplexity);
 
   return { story, image };
 }
@@ -80,10 +111,10 @@ self.onmessage = async (event: MessageEvent<MockRequest>) => {
         throw new Error('Missing payload for generate request');
       }
 
-      const { sillyLevel, spookyLevel, sleepyLevel } = payload;
+      const { sillyLevel, spookyLevel, sleepyLevel, canvasData } = payload;
 
       // Generate the content
-      const { story, image } = await simulateGeneration(sillyLevel, spookyLevel, sleepyLevel);
+      const { story, image } = await simulateGeneration(sillyLevel, spookyLevel, sleepyLevel, canvasData || null);
 
       // 30% chance of glitch
       const isGlitch = Math.random() < 0.3;

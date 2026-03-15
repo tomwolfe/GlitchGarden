@@ -19,7 +19,6 @@ export default function Home() {
     isGenerating,
     generationProgress,
     generationStatus,
-    isGlitch,
     setIsGenerating,
     setGenerationProgress,
     setGenerationStatus,
@@ -28,16 +27,19 @@ export default function Home() {
     setGlitch,
     setCanCatch,
     isMockMode,
+    cancelGeneration,
   } = useStoryStore();
 
   const mockWorkerRef = useRef<WorkerType>(null);
   const aiWorkerRef = useRef<WorkerType>(null);
+  const isWorkerActiveRef = useRef(false);
 
   // Initialize workers
   useEffect(() => {
     // Initialize mock worker
     const mockWorker = new Worker(new URL('@/workers/mockWorker.ts', import.meta.url));
     mockWorkerRef.current = mockWorker;
+    isWorkerActiveRef.current = false;
 
     mockWorker.onmessage = (event) => {
       const { type, payload } = event.data;
@@ -52,6 +54,7 @@ export default function Home() {
       }
 
       if (type === 'complete') {
+        isWorkerActiveRef.current = false;
         setCurrentStory(payload?.story || null);
         setCurrentImage(payload?.image || null);
         setGlitch(payload?.isGlitch || false);
@@ -60,6 +63,12 @@ export default function Home() {
       }
 
       if (type === 'error') {
+        isWorkerActiveRef.current = false;
+        // Handle cancellation silently
+        if (payload?.error === 'Cancelled') {
+          cancelGeneration();
+          return;
+        }
         console.error('Mock worker error:', payload?.error);
         setIsGenerating(false);
       }
@@ -83,6 +92,7 @@ export default function Home() {
         }
 
         if (type === 'complete') {
+          isWorkerActiveRef.current = false;
           setCurrentStory(payload?.story || null);
           setCurrentImage(payload?.image || null);
           setGlitch(payload?.isGlitch || false);
@@ -95,6 +105,12 @@ export default function Home() {
         }
 
         if (type === 'error') {
+          isWorkerActiveRef.current = false;
+          // Handle cancellation silently
+          if (payload?.error === 'Cancelled') {
+            cancelGeneration();
+            return;
+          }
           console.error('AI worker error:', payload?.error);
           setIsGenerating(false);
           setGenerationStatus('Error: ' + (payload?.error || 'Unknown error'));
@@ -109,15 +125,113 @@ export default function Home() {
       mockWorker.terminate();
       aiWorkerRef.current?.terminate();
     };
-  }, [isMockMode, setCurrentStory, setCurrentImage, setGlitch, setCanCatch, setIsGenerating, setGenerationProgress, setGenerationStatus]);
+  }, [isMockMode, setCurrentStory, setCurrentImage, setGlitch, setCanCatch, setIsGenerating, setGenerationProgress, setGenerationStatus, cancelGeneration]);
 
   // Handle dream generation
   const handleDream = useCallback(() => {
+    // Cancel any ongoing generation first
+    if (isWorkerActiveRef.current) {
+      // Send cancel message to the active worker
+      if (isMockMode && mockWorkerRef.current) {
+        mockWorkerRef.current.postMessage({ type: 'cancel' });
+      } else if (aiWorkerRef.current) {
+        aiWorkerRef.current.postMessage({ type: 'cancel' });
+      }
+      // Wait a brief moment for cancellation to process
+      isWorkerActiveRef.current = false;
+    }
+
+    // Terminate and recreate workers to ensure clean state
+    mockWorkerRef.current?.terminate();
+    aiWorkerRef.current?.terminate();
+
+    // Create fresh workers
+    const mockWorker = new Worker(new URL('@/workers/mockWorker.ts', import.meta.url));
+    mockWorkerRef.current = mockWorker;
+
+    mockWorker.onmessage = (event) => {
+      const { type, payload } = event.data;
+
+      if (type === 'progress') {
+        if (payload?.progress !== undefined) {
+          setGenerationProgress(payload.progress);
+        }
+        if (payload?.status) {
+          setGenerationStatus(payload.status);
+        }
+      }
+
+      if (type === 'complete') {
+        isWorkerActiveRef.current = false;
+        setCurrentStory(payload?.story || null);
+        setCurrentImage(payload?.image || null);
+        setGlitch(payload?.isGlitch || false);
+        setCanCatch(payload?.isGlitch || false);
+        setIsGenerating(false);
+      }
+
+      if (type === 'error') {
+        isWorkerActiveRef.current = false;
+        if (payload?.error === 'Cancelled') {
+          cancelGeneration();
+          return;
+        }
+        console.error('Mock worker error:', payload?.error);
+        setIsGenerating(false);
+      }
+    };
+
+    if (!isMockMode) {
+      const aiWorker = new Worker(new URL('@/workers/aiWorker.ts', import.meta.url));
+      aiWorkerRef.current = aiWorker;
+
+      aiWorker.onmessage = (event) => {
+        const { type, payload } = event.data;
+
+        if (type === 'progress' || type === 'modelProgress') {
+          if (payload?.progress !== undefined) {
+            setGenerationProgress(payload.progress);
+          }
+          if (payload?.status) {
+            setGenerationStatus(payload.status);
+          }
+        }
+
+        if (type === 'complete') {
+          isWorkerActiveRef.current = false;
+          setCurrentStory(payload?.story || null);
+          setCurrentImage(payload?.image || null);
+          setGlitch(payload?.isGlitch || false);
+          setCanCatch(payload?.isGlitch || false);
+          setIsGenerating(false);
+        }
+
+        if (type === 'ready') {
+          setGenerationStatus('AI models ready!');
+        }
+
+        if (type === 'error') {
+          isWorkerActiveRef.current = false;
+          if (payload?.error === 'Cancelled') {
+            cancelGeneration();
+            return;
+          }
+          console.error('AI worker error:', payload?.error);
+          setIsGenerating(false);
+          setGenerationStatus('Error: ' + (payload?.error || 'Unknown error'));
+        }
+      };
+
+      aiWorker.postMessage({ type: 'init' });
+    }
+
+    // Now start the new generation
     setIsGenerating(true);
     setGenerationProgress(0);
     setGenerationStatus('Starting dream sequence...');
     setGlitch(false);
     setCanCatch(false);
+    isWorkerActiveRef.current = true;
 
     const payload = {
       sillyLevel,
@@ -142,6 +256,9 @@ export default function Home() {
     setGenerationStatus,
     setGlitch,
     setCanCatch,
+    setCurrentStory,
+    setCurrentImage,
+    cancelGeneration,
   ]);
 
   return (

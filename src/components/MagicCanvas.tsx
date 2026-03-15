@@ -146,6 +146,9 @@ export const MagicCanvas: React.FC = () => {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     setCanvasData(null);
+    
+    // Return focus to canvas after clearing
+    canvas.focus();
   }, [setCanvasData]);
 
   // Set up event listeners for canvas
@@ -162,6 +165,19 @@ export const MagicCanvas: React.FC = () => {
     canvas.addEventListener('touchmove', draw, { passive: false });
     canvas.addEventListener('touchend', stopDrawing, { passive: true });
 
+    // Keyboard support for drawing
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.activeElement !== canvas) return;
+      
+      // Allow Enter or Space to clear canvas
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        clearCanvas();
+      }
+    };
+
+    canvas.addEventListener('keydown', handleKeyDown);
+
     return () => {
       canvas.removeEventListener('mousedown', startDrawing);
       canvas.removeEventListener('mousemove', draw);
@@ -170,8 +186,9 @@ export const MagicCanvas: React.FC = () => {
       canvas.removeEventListener('touchstart', startDrawing);
       canvas.removeEventListener('touchmove', draw);
       canvas.removeEventListener('touchend', stopDrawing);
+      canvas.removeEventListener('keydown', handleKeyDown);
     };
-  }, [startDrawing, draw, stopDrawing]);
+  }, [startDrawing, draw, stopDrawing, clearCanvas]);
 
   return (
     <div className="space-y-3">
@@ -179,14 +196,8 @@ export const MagicCanvas: React.FC = () => {
         <h2 className="text-2xl font-bold text-gray-800">✨ Magic Canvas</h2>
         <button
           onClick={clearCanvas}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              clearCanvas();
-            }
-          }}
           className="btn-chunky btn-chunky-secondary text-sm py-2 px-4"
-          aria-label="Clear canvas"
+          aria-label="Clear canvas (or press Enter/Space when canvas is focused)"
           tabIndex={0}
         >
           🗑️ Clear

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useStoryStore, Creature } from '@/store/useStoryStore';
-import { getCreatureImage } from '@/utils/db';
+import { getCreatureImage, getCreatureImageAsBlob } from '@/utils/db';
 
 const ZooCard: React.FC<{
   creature: Creature;
@@ -12,13 +12,44 @@ const ZooCard: React.FC<{
   const [imageData, setImageData] = useState<string | null>(null);
 
   useEffect(() => {
+    let url: string | null = null;
+
     async function loadImage() {
       if (hasImage) {
-        const data = await getCreatureImage(id);
-        setImageData(data || null);
+        try {
+          // Try to get as Blob first (new format)
+          const blob = await getCreatureImageAsBlob(id);
+
+          if (blob) {
+            // Check if it's an SVG blob
+            if (blob.type === 'image/svg+xml') {
+              // For SVG, read as text
+              const text = await blob.text();
+              setImageData(text);
+            } else {
+              // For other images, create object URL
+              url = URL.createObjectURL(blob);
+              setImageData(url);
+            }
+          } else {
+            // Fallback to legacy string format
+            const data = await getCreatureImage(id);
+            setImageData(data || null);
+          }
+        } catch (error) {
+          console.error('Failed to load creature image:', error);
+          setImageData(null);
+        }
       }
     }
     loadImage();
+
+    // Cleanup: revoke object URL to prevent memory leaks
+    return () => {
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+    };
   }, [id, hasImage]);
 
   const date = new Date(caughtAt);

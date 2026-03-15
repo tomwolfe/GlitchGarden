@@ -20,6 +20,20 @@ const withPWA = require('next-pwa')({
       },
     },
     {
+      urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/@huggingface\/transformers.*/i,
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'transformers-cdn-cache',
+        expiration: {
+          maxEntries: 10,
+          maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
+    {
       urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp)$/,
       handler: 'CacheFirst',
       options: {
@@ -38,17 +52,26 @@ const nextConfig = {
   images: {
     unoptimized: true, // Required for PWA offline support
   },
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, webpack }) => {
     if (isServer) {
       // Exclude transformers.js from server bundle
       config.externals = config.externals || [];
-      config.externals.push('@huggingface/transformers');
+      if (!config.externals.includes('@huggingface/transformers')) {
+        config.externals.push('@huggingface/transformers');
+      }
     }
     // Enable async WebAssembly
     config.experiments = {
       ...config.experiments,
       asyncWebAssembly: true,
     };
+    
+    // Add CDN external for transformers.js to prevent bundling
+    config.externals = config.externals || [];
+    config.externals.push(
+      '@huggingface/transformers'
+    );
+    
     return config;
   },
 };

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useStoryStore } from '@/store/useStoryStore';
 import { Pixel } from './Pixel';
 
@@ -15,6 +15,23 @@ export const StoryOutput: React.FC = () => {
     clearCurrentGeneration,
   } = useStoryStore();
 
+  const catchButtonRef = useRef<HTMLButtonElement>(null);
+  const storyRegionRef = useRef<HTMLDivElement>(null);
+
+  // Auto-focus the catch button when a creature appears
+  useEffect(() => {
+    if (canCatch && catchButtonRef.current) {
+      catchButtonRef.current.focus();
+    }
+  }, [canCatch]);
+
+  // Announce when a new story is generated
+  useEffect(() => {
+    if (currentStory && storyRegionRef.current) {
+      // Screen readers will announce the aria-live region update
+    }
+  }, [currentStory]);
+
   const getPixelMood = (): 'happy' | 'excited' | 'glitch' | 'thinking' => {
     if (isGlitch) return 'glitch';
     if (canCatch) return 'excited';
@@ -28,18 +45,24 @@ export const StoryOutput: React.FC = () => {
     <div className="flex flex-col h-full">
       {/* Pixel Character */}
       <div className="flex justify-center mb-6">
-        <Pixel 
-          mood={getPixelMood()} 
+        <Pixel
+          mood={getPixelMood()}
           message={pixelMessage}
           isSpeaking={!!pixelMessage}
         />
       </div>
 
-      {/* Output Area */}
-      <div className="flex-1 bg-white rounded-3xl shadow-lg p-6 border-4 border-gray-200 overflow-auto">
+      {/* Output Area - Using aria-live for screen reader announcements */}
+      <div 
+        ref={storyRegionRef}
+        className="flex-1 bg-white rounded-3xl shadow-lg p-6 border-4 border-gray-200 overflow-auto"
+        aria-live="polite"
+        aria-label="Story output area"
+        role="region"
+      >
         {!currentStory && !currentImage ? (
           <div className="h-full flex flex-col items-center justify-center text-gray-400">
-            <div className="text-6xl mb-4">📖</div>
+            <div className="text-6xl mb-4" aria-hidden="true">📖</div>
             <p className="text-xl font-semibold text-center">
               Mix your potions and draw something,<br/>
               then click &quot;Dream&quot; to create a story!
@@ -61,9 +84,11 @@ export const StoryOutput: React.FC = () => {
                 <div className="bg-gray-100 rounded-2xl p-2 border-4 border-gray-300">
                   <div className="relative">
                     {currentImage.includes('<svg') ? (
-                      <div 
+                      <div
                         className="w-full aspect-square"
                         dangerouslySetInnerHTML={{ __html: currentImage }}
+                        role="img"
+                        aria-label="Generated creature illustration"
                       />
                     ) : (
                       <img
@@ -77,8 +102,10 @@ export const StoryOutput: React.FC = () => {
                     {canCatch && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-xl">
                         <button
+                          ref={catchButtonRef}
                           onClick={catchCreature}
                           className="btn-chunky btn-chunky-danger catch-glow text-xl px-8 py-4 animate-pulse"
+                          aria-label="Catch this creature and add it to your zoo"
                         >
                           🦋 CATCH IT!
                         </button>
@@ -101,6 +128,7 @@ export const StoryOutput: React.FC = () => {
               <button
                 onClick={clearCurrentGeneration}
                 className="btn-chunky btn-chunky-secondary flex-1"
+                aria-label="Generate a new dream"
               >
                 🔄 New Dream
               </button>

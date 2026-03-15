@@ -59,6 +59,7 @@ interface StoryState {
   setCanCatch: (canCatch: boolean) => void;
   catchCreature: () => void;
   clearCurrentGeneration: () => void;
+  cancelGeneration: () => void;
   toggleMockMode: () => void;
   removeFromZoo: (id: string) => void;
   clearZoo: () => void;
@@ -156,7 +157,18 @@ export const useStoryStore = create<StoryState>()(
         glitchMessage: null,
         canCatch: false,
       }),
-      
+
+      cancelGeneration: () => set({
+        isGenerating: false,
+        generationProgress: 0,
+        generationStatus: 'Generation cancelled',
+        currentStory: null,
+        currentImage: null,
+        isGlitch: false,
+        glitchMessage: null,
+        canCatch: false,
+      }),
+
       toggleMockMode: () => set((state) => ({ isMockMode: !state.isMockMode })),
       
       removeFromZoo: async (id) => {
