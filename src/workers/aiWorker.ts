@@ -160,7 +160,7 @@ function buildPrompt(
 }
 
 /**
- * Generate story text using the AI model
+ * Generate story text using the AI model with retry logic
  */
 async function generateStoryWithAI(
   sillyLevel: number,
@@ -201,54 +201,97 @@ async function generateStoryWithAI(
     },
   } satisfies WorkerResponse);
 
-  // Generate text with cancellation check capability
-  // @ts-expect-error - transformers.js has complex union types that are incompatible
-  const output = await generator(prompt, {
-    max_new_tokens: 60,
-    temperature: 0.7 + (sillyLevel / 100) * 0.3,
-    top_p: 0.9,
-    do_sample: true,
-  });
+  // Retry logic for handling RangeError and other transient failures
+  const MAX_RETRIES = 2;
+  let lastError: Error | null = null;
 
-  // Check cancellation after generation completes
-  if (cancellationRequested) {
-    throw new Error('Generation cancelled');
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      // Generate text with cancellation check capability
+      // Using safer parameters to avoid RangeError: offset is out of bounds
+      // @ts-expect-error - transformers.js has complex union types that are incompatible
+      const output = await generator(prompt, {
+        max_new_tokens: 50, // Reduced from 60 to prevent memory issues
+        temperature: 0.8, // Fixed temperature for stability
+        top_p: 0.95,
+        top_k: 40, // Add top_k sampling for better control
+        do_sample: true,
+        repetition_penalty: 1.1, // Prevent repetitive output
+      });
+
+      // Check cancellation after generation completes
+      if (cancellationRequested) {
+        throw new Error('Generation cancelled');
+      }
+
+      self.postMessage({
+        type: 'progress',
+        payload: {
+          progress: 80,
+          status: 'Polishing the magic words...',
+        },
+      } satisfies WorkerResponse);
+
+      // Extract and clean the generated text
+      // @ts-expect-error - transformers.js output type is complex union
+      let story = output[0]?.generated_text ?? '';
+
+      // Remove the prompt from the output (model includes the input)
+      if (story.startsWith(prompt)) {
+        story = story.slice(prompt.length);
+      }
+
+      // Clean up whitespace and ensure it starts properly
+      story = story.trim();
+
+      // If the story doesn't start with a capital letter or quote, add a magical opening
+      if (!story.match(/^[A-Z"]/)) {
+        story =
+          'Once upon a time, ' +
+          story.charAt(0).toLowerCase() +
+          story.slice(1);
+      }
+
+      // Ensure it ends with punctuation
+      if (!story.match(/[.!?]$/)) {
+        story += '.';
+      }
+
+      return story;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Unknown error');
+      
+      // Check if it's a RangeError (memory/buffer issue)
+      if (lastError.name === 'RangeError' || lastError.message.includes('offset is out of bounds')) {
+        console.warn(`AI model RangeError (attempt ${attempt + 1}/${MAX_RETRIES + 1}):`, lastError.message);
+        
+        if (attempt < MAX_RETRIES) {
+          // Clear model cache and reload
+          textGenerator = null;
+          self.postMessage({
+            type: 'progress',
+            payload: {
+              progress: 20,
+              status: `Reinitializing AI model (attempt ${attempt + 2}/${MAX_RETRIES + 1})...`,
+            },
+          } satisfies WorkerResponse);
+          
+          // Wait a moment before retry
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Reload the model
+          await loadModel();
+          continue;
+        }
+      }
+      
+      // For non-RangeError or after max retries, rethrow
+      throw lastError;
+    }
   }
 
-  self.postMessage({
-    type: 'progress',
-    payload: {
-      progress: 80,
-      status: 'Polishing the magic words...',
-    },
-  } satisfies WorkerResponse);
-
-  // Extract and clean the generated text
-  // @ts-expect-error - transformers.js output type is complex union
-  let story = output[0]?.generated_text ?? '';
-
-  // Remove the prompt from the output (model includes the input)
-  if (story.startsWith(prompt)) {
-    story = story.slice(prompt.length);
-  }
-
-  // Clean up whitespace and ensure it starts properly
-  story = story.trim();
-
-  // If the story doesn't start with a capital letter or quote, add a magical opening
-  if (!story.match(/^[A-Z"]/)) {
-    story =
-      'Once upon a time, ' +
-      story.charAt(0).toLowerCase() +
-      story.slice(1);
-  }
-
-  // Ensure it ends with punctuation
-  if (!story.match(/[.!?]$/)) {
-    story += '.';
-  }
-
-  return story;
+  // This should never be reached, but TypeScript needs it
+  throw new Error('Generation failed after all retries');
 }
 
 // Handle messages from main thread
@@ -344,7 +387,31 @@ self.onmessage = async (event: MessageEvent<AIRequest>) => {
           } satisfies WorkerResponse);
           return;
         }
-        throw error;
+
+        // Log the full error for debugging
+        console.error('AI generation failed:', error);
+
+        // If AI fails after retries, generate a fallback story procedurally
+        const fallbackStories = [
+          `Once upon a time, a magical creature wandered through a land of wonder. It discovered a hidden cave filled with sparkling crystals that sang lullabies under the moonlight.`,
+          `In a faraway enchanted forest, a mysterious being made friends with the wind. Together, they danced through the trees, leaving trails of stardust behind.`,
+          `Long ago, a dreamy creature climbed the highest mountain to catch a falling star. When it succeeded, the star granted it three wishes for kindness.`,
+          `There once was a playful spirit who loved to paint rainbows across the sky. Every sunset was a masterpiece created with joy and imagination.`,
+          `In the kingdom of dreams, a gentle soul discovered a secret garden where flowers bloomed with light instead of petals.`,
+        ];
+
+        const fallbackStory = fallbackStories[Math.floor(Math.random() * fallbackStories.length)];
+
+        self.postMessage({
+          type: 'complete',
+          payload: {
+            progress: 100,
+            status: 'Dream complete! (fallback mode)',
+            story: fallbackStory,
+            image: generateSvgBlob(sillyLevel, spookyLevel, sleepyLevel),
+            isGlitch: true, // Mark as glitch since AI failed
+          },
+        } satisfies WorkerResponse);
       }
     }
   } catch (error) {
