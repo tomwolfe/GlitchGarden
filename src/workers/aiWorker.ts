@@ -43,7 +43,7 @@ let cancellationRequested = false;
 let transformersLoaded = false;
 
 /**
- * Load transformers.js from CDN using importScripts
+ * Load transformers.js from CDN using dynamic import
  * Uses the web-specific build for browser compatibility
  */
 async function loadTransformers(): Promise<void> {
@@ -52,33 +52,15 @@ async function loadTransformers(): Promise<void> {
   }
 
   try {
-    // Use the web-specific minified build from jsDelivr
-    // Use version 3.8.1 to match the installed package version
     const cdnUrl = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.web.min.js';
 
-    // Load via fetch and eval for better compatibility with modern workers
-    try {
-      const response = await fetch(cdnUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch transformers.js: ${response.status} ${response.statusText}`);
-      }
-      const code = await response.text();
-      // eslint-disable-next-line no-eval
-      eval(code);
-      transformers = (self as any).transformers;
-    } catch (fetchError) {
-      console.warn('Fetch failed, trying importScripts:', fetchError);
-      // Fallback to importScripts
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (self as any).importScripts(cdnUrl);
-      transformers = (self as any).transformers;
-    }
+    const transformersModule = await import(cdnUrl);
+    transformers = transformersModule;
 
     if (!transformers) {
       throw new Error('Transformers library not loaded');
     }
 
-    // Configure environment for browser caching
     if (transformers.env) {
       transformers.env.allowLocalModels = false;
       transformers.env.useBrowserCache = true;

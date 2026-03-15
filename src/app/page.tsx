@@ -76,7 +76,7 @@ export default function Home() {
 
     // Initialize AI worker if not in mock mode
     if (!isMockMode) {
-      const aiWorker = new Worker(new URL('@/workers/aiWorker.ts', import.meta.url));
+      const aiWorker = new Worker(new URL('@/workers/aiWorker.ts', import.meta.url), { type: 'module' });
       aiWorkerRef.current = aiWorker;
 
       aiWorker.onmessage = (event) => {
@@ -182,7 +182,7 @@ export default function Home() {
     };
 
     if (!isMockMode) {
-      const aiWorker = new Worker(new URL('@/workers/aiWorker.ts', import.meta.url));
+      const aiWorker = new Worker(new URL('@/workers/aiWorker.ts', import.meta.url), { type: 'module' });
       aiWorkerRef.current = aiWorker;
 
       aiWorker.onmessage = (event) => {
