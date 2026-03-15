@@ -1,10 +1,15 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import {
+  saveCreatureImage,
+  deleteCreatureImage,
+  clearAllImages,
+} from '@/utils/db';
 
 export interface Creature {
   id: string;
   name: string;
-  imageBase64: string;
+  hasImage: boolean;
   sillyLevel: number;
   spookyLevel: number;
   sleepyLevel: number;
@@ -117,14 +122,14 @@ export const useStoryStore = create<StoryState>()(
       }),
       setCanCatch: (canCatch) => set({ canCatch }),
       
-      catchCreature: () => {
+      catchCreature: async () => {
         const state = get();
         if (!state.currentImage) return;
-        
+
         const newCreature: Creature = {
           id: `creature-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           name: generateSillyName(state.sillyLevel, state.spookyLevel, state.sleepyLevel),
-          imageBase64: state.currentImage,
+          hasImage: true,
           sillyLevel: state.sillyLevel,
           spookyLevel: state.spookyLevel,
           sleepyLevel: state.sleepyLevel,
@@ -132,7 +137,10 @@ export const useStoryStore = create<StoryState>()(
           caughtAt: Date.now(),
           isGlitch: state.isGlitch,
         };
-        
+
+        // Save image to IndexedDB
+        await saveCreatureImage(newCreature.id, state.currentImage);
+
         set((state) => ({
           zoo: [...state.zoo, newCreature],
           canCatch: false,
@@ -151,11 +159,17 @@ export const useStoryStore = create<StoryState>()(
       
       toggleMockMode: () => set((state) => ({ isMockMode: !state.isMockMode })),
       
-      removeFromZoo: (id) => set((state) => ({
-        zoo: state.zoo.filter((c) => c.id !== id),
-      })),
-      
-      clearZoo: () => set({ zoo: [] }),
+      removeFromZoo: async (id) => {
+        await deleteCreatureImage(id);
+        set((state) => ({
+          zoo: state.zoo.filter((c) => c.id !== id),
+        }));
+      },
+
+      clearZoo: async () => {
+        await clearAllImages();
+        set({ zoo: [] });
+      },
     }),
     {
       name: 'latent-space-zoo-storage',

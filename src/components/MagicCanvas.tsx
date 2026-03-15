@@ -5,15 +5,28 @@ import { useStoryStore } from '@/store/useStoryStore';
 
 export const MagicCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const isDrawing = useRef(false);
   const lastPos = useRef<{ x: number; y: number } | null>(null);
-  
-  const { canvasData, setCanvasData } = useStoryStore();
 
-  // Initialize canvas
+  const { canvasData, setCanvasData, sillyLevel, spookyLevel, sleepyLevel } = useStoryStore();
+
+  // Get stroke color based on dominant potion level
+  const getStrokeColor = useCallback(() => {
+    const levels = [
+      { name: 'silly', value: sillyLevel, color: '#FDE047' },
+      { name: 'spooky', value: spookyLevel, color: '#C084FC' },
+      { name: 'sleepy', value: sleepyLevel, color: '#93C5FD' },
+    ];
+    levels.sort((a, b) => b.value - a.value);
+    return levels[0].color;
+  }, [sillyLevel, spookyLevel, sleepyLevel]);
+
+  // Initialize canvas and handle resize
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -22,47 +35,81 @@ export const MagicCanvas: React.FC = () => {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.lineWidth = 8;
-    ctx.strokeStyle = '#3B82F6';
+    ctx.strokeStyle = getStrokeColor();
 
-    // Restore saved data if exists
-    if (canvasData) {
-      const img = new Image();
-      img.onload = () => {
-        ctx.drawImage(img, 0, 0);
-      };
-      img.src = canvasData;
+    // Resize canvas to match container
+    function resizeCanvas() {
+      if (!container || !canvas || !ctx) return;
+      const rect = container.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      ctx.strokeStyle = getStrokeColor();
+      
+      // Redraw saved data if exists
+      if (canvasData) {
+        const img = new Image();
+        img.onload = () => {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        };
+        img.src = canvasData;
+      }
     }
-  }, []);
 
-  const getPos = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    // Initial resize
+    resizeCanvas();
+
+    // Listen for resize events
+    const resizeObserver = new ResizeObserver(resizeCanvas);
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [canvasData, getStrokeColor]);
+
+  // Update stroke color when potion levels change
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.strokeStyle = getStrokeColor();
+      }
+    }
+  }, [getStrokeColor]);
+
+  const getPos = useCallback((e: MouseEvent | TouchEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
 
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
 
     if ('touches' in e) {
       const touch = e.touches[0];
       return {
-        x: (touch.clientX - rect.left) * scaleX,
-        y: (touch.clientY - rect.top) * scaleY,
+        x: touch.clientX - rect.left,
+        y: touch.clientY - rect.top,
       };
     } else {
       return {
-        x: (e.clientX - rect.left) * scaleX,
-        y: (e.clientY - rect.top) * scaleY,
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
       };
     }
   }, []);
 
-  const startDrawing = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+  const startDrawing = useCallback((e: MouseEvent | TouchEvent) => {
     isDrawing.current = true;
     lastPos.current = getPos(e);
   }, [getPos]);
 
-  const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+  const draw = useCallback((e: MouseEvent | TouchEvent) => {
     if (!isDrawing.current || !lastPos.current) return;
+
+    // Prevent scrolling on touch devices
+    if ('touches' in e) {
+      e.preventDefault();
+    }
 
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
@@ -80,7 +127,7 @@ export const MagicCanvas: React.FC = () => {
 
   const stopDrawing = useCallback(() => {
     if (!isDrawing.current) return;
-    
+
     isDrawing.current = false;
     lastPos.current = null;
 
@@ -101,32 +148,56 @@ export const MagicCanvas: React.FC = () => {
     setCanvasData(null);
   }, [setCanvasData]);
 
+  // Set up event listeners for canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // Use passive: false to allow preventDefault on touch events
+    canvas.addEventListener('mousedown', startDrawing, { passive: true });
+    canvas.addEventListener('mousemove', draw, { passive: false });
+    canvas.addEventListener('mouseup', stopDrawing, { passive: true });
+    canvas.addEventListener('mouseleave', stopDrawing, { passive: true });
+    canvas.addEventListener('touchstart', startDrawing, { passive: true });
+    canvas.addEventListener('touchmove', draw, { passive: false });
+    canvas.addEventListener('touchend', stopDrawing, { passive: true });
+
+    return () => {
+      canvas.removeEventListener('mousedown', startDrawing);
+      canvas.removeEventListener('mousemove', draw);
+      canvas.removeEventListener('mouseup', stopDrawing);
+      canvas.removeEventListener('mouseleave', stopDrawing);
+      canvas.removeEventListener('touchstart', startDrawing);
+      canvas.removeEventListener('touchmove', draw);
+      canvas.removeEventListener('touchend', stopDrawing);
+    };
+  }, [startDrawing, draw, stopDrawing]);
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-800">✨ Magic Canvas</h2>
         <button
           onClick={clearCanvas}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              clearCanvas();
+            }
+          }}
           className="btn-chunky btn-chunky-secondary text-sm py-2 px-4"
           aria-label="Clear canvas"
+          tabIndex={0}
         >
           🗑️ Clear
         </button>
       </div>
-      <div className="canvas-container touch-none" style={{ aspectRatio: '1' }}>
+      <div ref={containerRef} className="canvas-container" style={{ aspectRatio: '1' }}>
         <canvas
           ref={canvasRef}
-          width={512}
-          height={512}
-          className="w-full h-full cursor-crosshair"
-          onMouseDown={startDrawing}
-          onMouseMove={draw}
-          onMouseUp={stopDrawing}
-          onMouseLeave={stopDrawing}
-          onTouchStart={startDrawing}
-          onTouchMove={draw}
-          onTouchEnd={stopDrawing}
+          className="w-full h-full cursor-crosshair touch-none"
           aria-label="Drawing canvas for story inspiration"
+          tabIndex={0}
         />
       </div>
       <p className="text-sm text-gray-500 text-center">

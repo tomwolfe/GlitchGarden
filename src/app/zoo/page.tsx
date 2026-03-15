@@ -1,19 +1,26 @@
 'use client';
 
-import React from 'react';
-import { useStoryStore } from '@/store/useStoryStore';
+import React, { useEffect, useState } from 'react';
+import { useStoryStore, Creature } from '@/store/useStoryStore';
+import { getCreatureImage } from '@/utils/db';
 
 const ZooCard: React.FC<{
-  id: string;
-  name: string;
-  imageBase64: string;
-  sillyLevel: number;
-  spookyLevel: number;
-  sleepyLevel: number;
-  isGlitch: boolean;
-  caughtAt: number;
+  creature: Creature;
   onRemove: (id: string) => void;
-}> = ({ id, name, imageBase64, sillyLevel, spookyLevel, sleepyLevel, isGlitch, caughtAt, onRemove }) => {
+}> = ({ creature, onRemove }) => {
+  const { id, name, hasImage, sillyLevel, spookyLevel, sleepyLevel, isGlitch, caughtAt } = creature;
+  const [imageData, setImageData] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadImage() {
+      if (hasImage) {
+        const data = await getCreatureImage(id);
+        setImageData(data || null);
+      }
+    }
+    loadImage();
+  }, [id, hasImage]);
+
   const date = new Date(caughtAt);
   const dateStr = date.toLocaleDateString();
 
@@ -21,17 +28,23 @@ const ZooCard: React.FC<{
     <div className="zoo-card group">
       {/* Image */}
       <div className="aspect-square overflow-hidden bg-gray-100">
-        {imageBase64.includes('<svg') ? (
-          <div 
-            className="w-full h-full"
-            dangerouslySetInnerHTML={{ __html: imageBase64 }}
-          />
+        {imageData ? (
+          imageData.includes('<svg') ? (
+            <div
+              className="w-full h-full"
+              dangerouslySetInnerHTML={{ __html: imageData }}
+            />
+          ) : (
+            <img
+              src={imageData}
+              alt={name}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            />
+          )
         ) : (
-          <img
-            src={imageBase64}
-            alt={name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          />
+          <div className="w-full h-full flex items-center justify-center text-gray-400">
+            Loading...
+          </div>
         )}
       </div>
 
@@ -143,7 +156,7 @@ export default function ZooPage() {
             {zoo.map((creature) => (
               <ZooCard
                 key={creature.id}
-                {...creature}
+                creature={creature}
                 onRemove={removeFromZoo}
               />
             ))}
