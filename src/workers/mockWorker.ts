@@ -4,60 +4,22 @@
  * Used for UI testing before connecting real WebGPU models
  */
 
-import { generateSvgBlob, generateStory } from './shared';
+import {
+  generateSvgBlob,
+  generateStory,
+  getCanvasComplexity,
+  type WorkerPayload,
+  type WorkerResponse,
+} from './shared';
 
 type MockRequestType = 'generate' | 'init' | 'cancel';
 
 interface MockRequest {
   type: MockRequestType;
-  payload?: {
-    sillyLevel: number;
-    spookyLevel: number;
-    sleepyLevel: number;
-    canvasData?: string | null;
-  };
+  payload?: WorkerPayload;
 }
 
-interface MockResponse {
-  type: 'progress' | 'complete' | 'error' | 'ready';
-  payload?: {
-    progress?: number;
-    status?: string;
-    story?: string;
-    image?: string;
-    isGlitch?: boolean;
-    error?: string;
-  };
-}
-
-/**
- * Analyze canvas data to extract complexity metrics
- */
-function analyzeCanvasData(canvasData: string | null): number {
-  if (!canvasData) {
-    return 0;
-  }
-
-  try {
-    // Decode base64 to get image data
-    const base64Data = canvasData.split(',')[1];
-    if (!base64Data) {
-      return 0;
-    }
-
-    // Create a simple complexity metric based on data length
-    const dataLength = base64Data.length;
-    
-    // Normalize complexity to 0-100 scale
-    const minData = 1000;
-    const maxData = 15000;
-    const complexity = Math.min(100, Math.max(0, ((dataLength - minData) / (maxData - minData)) * 100));
-
-    return Math.round(complexity);
-  } catch {
-    return 0;
-  }
-}
+let cancellationRequested = false;
 
 // Simulate async generation with progress updates
 async function simulateGeneration(
@@ -66,11 +28,16 @@ async function simulateGeneration(
   sleepyLevel: number,
   canvasData: string | null = null
 ): Promise<{ story: string; image: string }> {
-  const canvasComplexity = analyzeCanvasData(canvasData);
+  const canvasComplexity = getCanvasComplexity(canvasData);
   const totalSteps = 50;
 
   for (let i = 0; i <= totalSteps; i += 5) {
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Check for cancellation at each step
+    if (cancellationRequested) {
+      throw new Error('Generation cancelled');
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     let status = '';
     if (i < 10) status = 'Warming up the imagination...';
@@ -85,11 +52,16 @@ async function simulateGeneration(
         progress: i,
         status,
       },
-    } as MockResponse);
+    } satisfies WorkerResponse);
   }
 
   const story = generateStory(sillyLevel, spookyLevel, sleepyLevel);
-  const image = generateSvgBlob(sillyLevel, spookyLevel, sleepyLevel, canvasComplexity);
+  const image = generateSvgBlob(
+    sillyLevel,
+    spookyLevel,
+    sleepyLevel,
+    canvasComplexity
+  );
 
   return { story, image };
 }
@@ -103,32 +75,73 @@ self.onmessage = async (event: MessageEvent<MockRequest>) => {
       self.postMessage({
         type: 'ready',
         payload: { status: 'Mock AI Worker ready!' },
-      } as MockResponse);
+      } satisfies WorkerResponse);
+    }
+
+    if (type === 'cancel') {
+      cancellationRequested = true;
+      self.postMessage({
+        type: 'progress',
+        payload: {
+          status: 'Generation cancelled',
+          progress: 0,
+        },
+      } satisfies WorkerResponse);
+      return;
     }
 
     if (type === 'generate') {
+      // Reset cancellation flag
+      cancellationRequested = false;
+
       if (!payload) {
         throw new Error('Missing payload for generate request');
       }
 
       const { sillyLevel, spookyLevel, sleepyLevel, canvasData } = payload;
 
-      // Generate the content
-      const { story, image } = await simulateGeneration(sillyLevel, spookyLevel, sleepyLevel, canvasData || null);
+      try {
+        // Generate the content
+        const { story, image } = await simulateGeneration(
+          sillyLevel,
+          spookyLevel,
+          sleepyLevel,
+          canvasData ?? null
+        );
 
-      // 30% chance of glitch
-      const isGlitch = Math.random() < 0.3;
+        // Check cancellation after generation
+        if (cancellationRequested) {
+          throw new Error('Generation cancelled');
+        }
 
-      self.postMessage({
-        type: 'complete',
-        payload: {
-          progress: 100,
-          status: 'Dream complete!',
-          story,
-          image,
-          isGlitch,
-        },
-      } as MockResponse);
+        // 30% chance of glitch
+        const isGlitch = Math.random() < 0.3;
+
+        self.postMessage({
+          type: 'complete',
+          payload: {
+            progress: 100,
+            status: 'Dream complete!',
+            story,
+            image,
+            isGlitch,
+          },
+        } satisfies WorkerResponse);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === 'Generation cancelled'
+        ) {
+          self.postMessage({
+            type: 'error',
+            payload: {
+              error: 'Cancelled',
+            },
+          } satisfies WorkerResponse);
+          return;
+        }
+        throw error;
+      }
     }
   } catch (error) {
     self.postMessage({
@@ -136,7 +149,7 @@ self.onmessage = async (event: MessageEvent<MockRequest>) => {
       payload: {
         error: error instanceof Error ? error.message : 'Unknown error',
       },
-    } as MockResponse);
+    } satisfies WorkerResponse);
   }
 };
 

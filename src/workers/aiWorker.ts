@@ -1,44 +1,40 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * AI Worker - Real Local AI with Transformers.js
  * Uses @xenova/transformers for in-browser text generation
+ *
+ * This file requires `any` types due to complex union types in transformers.js
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { pipeline, env } from '@xenova/transformers';
-import { generateSvgBlob, CREATURE_NAMES } from './shared';
+import {
+  generateSvgBlob,
+  CREATURE_NAMES,
+  analyzeCanvasData,
+  type WorkerPayload,
+  type WorkerResponse,
+  type CanvasAnalysis,
+} from './shared';
 
 type AIRequestType = 'init' | 'generate' | 'cancel' | 'clearCache';
 
 interface AIRequest {
   type: AIRequestType;
-  payload?: {
-    sillyLevel: number;
-    spookyLevel: number;
-    sleepyLevel: number;
-    canvasData?: string | null;
-    prompt?: string;
-  };
-}
-
-interface AIResponse {
-  type: 'progress' | 'complete' | 'error' | 'ready' | 'modelProgress';
-  payload?: {
-    progress?: number;
-    status?: string;
-    story?: string;
-    image?: string;
-    isGlitch?: boolean;
-    error?: string;
-    model?: string;
-    modelProgress?: number;
-  };
+  payload?: WorkerPayload;
 }
 
 // Singleton pattern for model loading
-let textGenerator: any = null;
+let textGenerator: Awaited<ReturnType<typeof pipeline>> | null = null;
 let modelLoading = false;
 let cancellationRequested = false;
 let transformersLoaded = false;
+
+// Type for transformers.js progress callback
+interface TransformersProgress {
+  status: string;
+  loaded?: number;
+  total?: number;
+}
 
 /**
  * Configure transformers.js environment
@@ -50,15 +46,14 @@ function configureTransformers(): void {
 
   env.allowLocalModels = false;
   env.useBrowserCache = true;
-  
+
   transformersLoaded = true;
 }
 
 /**
  * Load the text generation model
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function loadModel(): Promise<any> {
+async function loadModel(): Promise<Awaited<ReturnType<typeof pipeline>>> {
   if (textGenerator) {
     return textGenerator;
   }
@@ -66,9 +61,11 @@ async function loadModel(): Promise<any> {
   if (modelLoading) {
     // Wait for ongoing load
     while (modelLoading) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    return textGenerator;
+    if (textGenerator) {
+      return textGenerator;
+    }
   }
 
   modelLoading = true;
@@ -82,22 +79,24 @@ async function loadModel(): Promise<any> {
         status: 'Loading AI model...',
         modelProgress: 0,
       },
-    } as AIResponse);
+    } satisfies WorkerResponse);
 
     // Model configuration - using TinyLlama for speed
     const MODEL_ID = 'Xenova/TinyLlama-1.1B-Chat-v1.0';
 
     textGenerator = await pipeline('text-generation', MODEL_ID, {
-      progress_callback: (progress: any) => {
+      progress_callback: (progress: TransformersProgress) => {
         if (progress.status === 'progress') {
-          const percent = Math.round((progress.loaded / progress.total) * 100);
+          const percent = Math.round(
+            ((progress.loaded ?? 0) / (progress.total ?? 1)) * 100
+          );
           self.postMessage({
             type: 'modelProgress',
             payload: {
               status: `Downloading model: ${percent}%`,
               modelProgress: percent,
             },
-          } as AIResponse);
+          } satisfies WorkerResponse);
         } else if (progress.status === 'done') {
           self.postMessage({
             type: 'modelProgress',
@@ -105,7 +104,7 @@ async function loadModel(): Promise<any> {
               status: 'Model loaded!',
               modelProgress: 100,
             },
-          } as AIResponse);
+          } satisfies WorkerResponse);
         }
       },
     });
@@ -119,78 +118,40 @@ async function loadModel(): Promise<any> {
 }
 
 /**
- * Analyze canvas data to extract complexity metrics
- */
-function analyzeCanvasData(canvasData: string | null): { complexity: number; description: string } {
-  if (!canvasData) {
-    return { complexity: 0, description: 'no drawing' };
-  }
-
-  try {
-    // Decode base64 to get image data
-    const base64Data = canvasData.split(',')[1];
-    if (!base64Data) {
-      return { complexity: 0, description: 'an empty canvas' };
-    }
-
-    // Create a simple complexity metric based on data length
-    // Longer base64 = more pixels drawn = more complex drawing
-    const dataLength = base64Data.length;
-    
-    // Normalize complexity to 0-100 scale
-    // Typical empty canvas is ~1000-2000 chars, full drawing can be 10000+
-    const minData = 1000;
-    const maxData = 15000;
-    const complexity = Math.min(100, Math.max(0, ((dataLength - minData) / (maxData - minData)) * 100));
-
-    let description = 'a simple drawing';
-    if (complexity > 80) {
-      description = 'a very complex and detailed drawing';
-    } else if (complexity > 50) {
-      description = 'a moderately detailed drawing';
-    } else if (complexity > 20) {
-      description = 'a simple sketch';
-    }
-
-    return { complexity: Math.round(complexity), description };
-  } catch {
-    return { complexity: 0, description: 'no drawing' };
-  }
-}
-
-/**
  * Build a prompt for the AI model based on potion levels and canvas data
  */
 function buildPrompt(
   sillyLevel: number,
   spookyLevel: number,
   sleepyLevel: number,
-  canvasAnalysis: { complexity: number; description: string }
+  canvasAnalysis: CanvasAnalysis
 ): string {
-  const creature = CREATURE_NAMES[Math.floor(Math.random() * CREATURE_NAMES.length)];
+  const creature =
+    CREATURE_NAMES[Math.floor(Math.random() * CREATURE_NAMES.length)];
 
   // Build personality traits based on levels
   const traits: string[] = [];
-  
+
   if (sillyLevel > 60) {
     traits.push('playful and silly');
   } else if (sillyLevel > 30) {
     traits.push('somewhat playful');
   }
-  
+
   if (spookyLevel > 60) {
     traits.push('mysterious and slightly spooky');
   } else if (spookyLevel > 30) {
     traits.push('a bit mysterious');
   }
-  
+
   if (sleepyLevel > 60) {
     traits.push('dreamy and sleepy');
   } else if (sleepyLevel > 30) {
     traits.push('calm and relaxed');
   }
 
-  const personality = traits.length > 0 ? traits.join(', ') : 'ordinary';
+  const personality =
+    traits.length > 0 ? traits.join(', ') : 'ordinary';
 
   // Build the prompt
   const prompt = `You are a whimsical children's story writer. Write a short, magical story (2-3 sentences) about a ${personality} creature called a "${creature}". The user drew ${canvasAnalysis.description} which inspired this story. Make it fun, imaginative, and suitable for children. Start with "Once upon a time" or similar magical opening.`;
@@ -208,7 +169,12 @@ async function generateStoryWithAI(
   canvasData: string | null
 ): Promise<string> {
   const canvasAnalysis = analyzeCanvasData(canvasData);
-  const prompt = buildPrompt(sillyLevel, spookyLevel, sleepyLevel, canvasAnalysis);
+  const prompt = buildPrompt(
+    sillyLevel,
+    spookyLevel,
+    sleepyLevel,
+    canvasAnalysis
+  );
 
   // Report progress
   self.postMessage({
@@ -217,11 +183,12 @@ async function generateStoryWithAI(
       progress: 10,
       status: 'Consulting the AI oracle...',
     },
-  } as AIResponse);
+  } satisfies WorkerResponse);
 
   // Load model if needed
   const generator = await loadModel();
 
+  // Check cancellation before proceeding
   if (cancellationRequested) {
     throw new Error('Generation cancelled');
   }
@@ -232,9 +199,10 @@ async function generateStoryWithAI(
       progress: 30,
       status: 'Weaving dream threads with AI...',
     },
-  } as AIResponse);
+  } satisfies WorkerResponse);
 
-  // Generate text
+  // Generate text with cancellation check capability
+  // @ts-expect-error - transformers.js has complex union types that are incompatible
   const output = await generator(prompt, {
     max_new_tokens: 60,
     temperature: 0.7 + (sillyLevel / 100) * 0.3,
@@ -242,6 +210,7 @@ async function generateStoryWithAI(
     do_sample: true,
   });
 
+  // Check cancellation after generation completes
   if (cancellationRequested) {
     throw new Error('Generation cancelled');
   }
@@ -252,22 +221,26 @@ async function generateStoryWithAI(
       progress: 80,
       status: 'Polishing the magic words...',
     },
-  } as AIResponse);
+  } satisfies WorkerResponse);
 
   // Extract and clean the generated text
-  let story = output[0]?.generated_text || '';
-  
+  // @ts-expect-error - transformers.js output type is complex union
+  let story = output[0]?.generated_text ?? '';
+
   // Remove the prompt from the output (model includes the input)
   if (story.startsWith(prompt)) {
     story = story.slice(prompt.length);
   }
-  
+
   // Clean up whitespace and ensure it starts properly
   story = story.trim();
-  
+
   // If the story doesn't start with a capital letter or quote, add a magical opening
   if (!story.match(/^[A-Z"]/)) {
-    story = 'Once upon a time, ' + story.charAt(0).toLowerCase() + story.slice(1);
+    story =
+      'Once upon a time, ' +
+      story.charAt(0).toLowerCase() +
+      story.slice(1);
   }
 
   // Ensure it ends with punctuation
@@ -293,7 +266,7 @@ self.onmessage = async (event: MessageEvent<AIRequest>) => {
             payload: {
               error: `Failed to load model: ${error.message || 'Unknown error'}`,
             },
-          } as AIResponse);
+          } satisfies WorkerResponse);
         });
       } catch (error) {
         self.postMessage({
@@ -301,13 +274,13 @@ self.onmessage = async (event: MessageEvent<AIRequest>) => {
           payload: {
             error: `Failed to initialize AI: ${error instanceof Error ? error.message : 'Unknown error'}`,
           },
-        } as AIResponse);
+        } satisfies WorkerResponse);
       }
 
       self.postMessage({
         type: 'ready',
         payload: { status: 'AI Worker ready - loading models...' },
-      } as AIResponse);
+      } satisfies WorkerResponse);
     }
 
     if (type === 'cancel') {
@@ -318,7 +291,7 @@ self.onmessage = async (event: MessageEvent<AIRequest>) => {
           status: 'Generation cancelled',
           progress: 0,
         },
-      } as AIResponse);
+      } satisfies WorkerResponse);
       return;
     }
 
@@ -334,7 +307,12 @@ self.onmessage = async (event: MessageEvent<AIRequest>) => {
 
       try {
         // Generate story using AI
-        const story = await generateStoryWithAI(sillyLevel, spookyLevel, sleepyLevel, canvasData || null);
+        const story = await generateStoryWithAI(
+          sillyLevel,
+          spookyLevel,
+          sleepyLevel,
+          canvasData ?? null
+        );
 
         if (cancellationRequested) {
           throw new Error('Generation cancelled');
@@ -355,7 +333,7 @@ self.onmessage = async (event: MessageEvent<AIRequest>) => {
             image,
             isGlitch,
           },
-        } as AIResponse);
+        } satisfies WorkerResponse);
       } catch (error) {
         if (error instanceof Error && error.message === 'Generation cancelled') {
           self.postMessage({
@@ -363,7 +341,7 @@ self.onmessage = async (event: MessageEvent<AIRequest>) => {
             payload: {
               error: 'Cancelled',
             },
-          } as AIResponse);
+          } satisfies WorkerResponse);
           return;
         }
         throw error;
@@ -375,7 +353,7 @@ self.onmessage = async (event: MessageEvent<AIRequest>) => {
       payload: {
         error: error instanceof Error ? error.message : 'Unknown error',
       },
-    } as AIResponse);
+    } satisfies WorkerResponse);
   }
 };
 

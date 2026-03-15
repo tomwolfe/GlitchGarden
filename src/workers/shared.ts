@@ -1,7 +1,34 @@
 /**
  * Shared utilities for AI workers
- * Contains common functions and constants used by both mockWorker and aiWorker
+ * Contains common functions, types, and constants used by both mockWorker and aiWorker
  */
+
+// ============== Shared Types ==============
+
+export interface WorkerPayload {
+  sillyLevel: number;
+  spookyLevel: number;
+  sleepyLevel: number;
+  canvasData?: string | null;
+}
+
+export interface WorkerResponse {
+  type: 'progress' | 'complete' | 'error' | 'ready' | 'modelProgress';
+  payload?: {
+    progress?: number;
+    status?: string;
+    story?: string;
+    image?: string;
+    isGlitch?: boolean;
+    error?: string;
+    modelProgress?: number;
+  };
+}
+
+export interface CanvasAnalysis {
+  complexity: number;
+  description: string;
+}
 
 // Story templates based on potion levels
 export const STORY_TEMPLATES = {
@@ -163,4 +190,53 @@ export function generateStory(silly: number, spooky: number, sleepy: number): st
   const creature = CREATURE_NAMES[Math.floor(Math.random() * CREATURE_NAMES.length)];
 
   return template.replace('{creature}', creature);
+}
+
+/**
+ * Analyze canvas data to extract complexity metrics
+ * Shared between both workers to ensure consistent behavior
+ */
+export function analyzeCanvasData(canvasData: string | null): CanvasAnalysis {
+  if (!canvasData) {
+    return { complexity: 0, description: 'no drawing' };
+  }
+
+  try {
+    // Decode base64 to get image data
+    const base64Data = canvasData.split(',')[1];
+    if (!base64Data) {
+      return { complexity: 0, description: 'an empty canvas' };
+    }
+
+    // Create a simple complexity metric based on data length
+    // Longer base64 = more pixels drawn = more complex drawing
+    const dataLength = base64Data.length;
+
+    // Normalize complexity to 0-100 scale
+    // Typical empty canvas is ~1000-2000 chars, full drawing can be 10000+
+    const minData = 1000;
+    const maxData = 15000;
+    const complexity = Math.min(100, Math.max(0, ((dataLength - minData) / (maxData - minData)) * 100));
+
+    let description = 'a simple drawing';
+    if (complexity > 80) {
+      description = 'a very complex and detailed drawing';
+    } else if (complexity > 50) {
+      description = 'a moderately detailed drawing';
+    } else if (complexity > 20) {
+      description = 'a simple sketch';
+    }
+
+    return { complexity: Math.round(complexity), description };
+  } catch {
+    return { complexity: 0, description: 'no drawing' };
+  }
+}
+
+/**
+ * Analyze canvas data and return only complexity score (for mock worker)
+ */
+export function getCanvasComplexity(canvasData: string | null): number {
+  const analysis = analyzeCanvasData(canvasData);
+  return analysis.complexity;
 }

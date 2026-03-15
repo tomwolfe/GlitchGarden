@@ -1,15 +1,23 @@
 'use client';
 
 import React, { useRef, useCallback, useEffect } from 'react';
-import { useStoryStore } from '@/store/useStoryStore';
+import { useStoryStore, type StrokePath, type StrokePoint } from '@/store/useStoryStore';
 
 export const MagicCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDrawing = useRef(false);
-  const lastPos = useRef<{ x: number; y: number } | null>(null);
+  const currentStroke = useRef<StrokePoint[]>([]);
 
-  const { canvasData, setCanvasData, sillyLevel, spookyLevel, sleepyLevel } = useStoryStore();
+  const { 
+    canvasStrokes,
+    setCanvasData, 
+    addCanvasStroke,
+    clearCanvasStrokes,
+    sillyLevel, 
+    spookyLevel, 
+    sleepyLevel 
+  } = useStoryStore();
 
   // Get stroke color based on dominant potion level
   const getStrokeColor = useCallback(() => {
@@ -21,6 +29,51 @@ export const MagicCanvas: React.FC = () => {
     levels.sort((a, b) => b.value - a.value);
     return levels[0].color;
   }, [sillyLevel, spookyLevel, sleepyLevel]);
+
+  // Render all strokes to canvas
+  const renderCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw all saved strokes
+    canvasStrokes.forEach((stroke) => {
+      if (stroke.points.length < 2) return;
+
+      ctx.beginPath();
+      ctx.strokeStyle = stroke.color;
+      ctx.lineWidth = 8;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+      for (let i = 1; i < stroke.points.length; i++) {
+        ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+      }
+      ctx.stroke();
+    });
+
+    // Draw current stroke in progress
+    if (currentStroke.current.length >= 2) {
+      ctx.beginPath();
+      ctx.strokeStyle = getStrokeColor();
+      ctx.lineWidth = 8;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      ctx.moveTo(currentStroke.current[0].x, currentStroke.current[0].y);
+      for (let i = 1; i < currentStroke.current.length; i++) {
+        ctx.lineTo(currentStroke.current[i].x, currentStroke.current[i].y);
+      }
+      ctx.stroke();
+    }
+  }, [canvasStrokes, getStrokeColor]);
 
   // Initialize canvas and handle resize
   useEffect(() => {
@@ -41,18 +94,13 @@ export const MagicCanvas: React.FC = () => {
     function resizeCanvas() {
       if (!container || !canvas || !ctx) return;
       const rect = container.getBoundingClientRect();
+      
       canvas.width = rect.width;
       canvas.height = rect.height;
       ctx.strokeStyle = getStrokeColor();
-      
-      // Redraw saved data if exists
-      if (canvasData) {
-        const img = new Image();
-        img.onload = () => {
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        };
-        img.src = canvasData;
-      }
+
+      // Re-render all strokes at new size (vector strokes scale automatically)
+      renderCanvas();
     }
 
     // Initial resize
@@ -65,18 +113,12 @@ export const MagicCanvas: React.FC = () => {
     return () => {
       resizeObserver.disconnect();
     };
-  }, [canvasData, getStrokeColor]);
+  }, [getStrokeColor, renderCanvas, canvasStrokes]);
 
   // Update stroke color when potion levels change
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.strokeStyle = getStrokeColor();
-      }
-    }
-  }, [getStrokeColor]);
+    renderCanvas();
+  }, [getStrokeColor, renderCanvas]);
 
   const getPos = useCallback((e: MouseEvent | TouchEvent) => {
     const canvas = canvasRef.current;
@@ -100,11 +142,12 @@ export const MagicCanvas: React.FC = () => {
 
   const startDrawing = useCallback((e: MouseEvent | TouchEvent) => {
     isDrawing.current = true;
-    lastPos.current = getPos(e);
+    const pos = getPos(e);
+    currentStroke.current = [pos];
   }, [getPos]);
 
   const draw = useCallback((e: MouseEvent | TouchEvent) => {
-    if (!isDrawing.current || !lastPos.current) return;
+    if (!isDrawing.current) return;
 
     // Prevent scrolling on touch devices
     if ('touches' in e) {
@@ -116,28 +159,35 @@ export const MagicCanvas: React.FC = () => {
     if (!canvas || !ctx) return;
 
     const currentPos = getPos(e);
+    currentStroke.current.push(currentPos);
 
-    ctx.beginPath();
-    ctx.moveTo(lastPos.current.x, lastPos.current.y);
-    ctx.lineTo(currentPos.x, currentPos.y);
-    ctx.stroke();
-
-    lastPos.current = currentPos;
-  }, [getPos]);
+    // Render immediately for smooth drawing
+    renderCanvas();
+  }, [getPos, renderCanvas]);
 
   const stopDrawing = useCallback(() => {
     if (!isDrawing.current) return;
 
     isDrawing.current = false;
-    lastPos.current = null;
 
-    // Save canvas data
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const dataUrl = canvas.toDataURL('image/png');
-      setCanvasData(dataUrl);
+    // Save the stroke if it has enough points
+    if (currentStroke.current.length >= 2) {
+      const stroke: StrokePath = {
+        points: [...currentStroke.current],
+        color: getStrokeColor(),
+      };
+      addCanvasStroke(stroke);
+      
+      // Update canvasData as Base64 for backward compatibility with workers
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const dataUrl = canvas.toDataURL('image/png');
+        setCanvasData(dataUrl);
+      }
     }
-  }, [setCanvasData]);
+
+    currentStroke.current = [];
+  }, [getStrokeColor, addCanvasStroke, setCanvasData]);
 
   const clearCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -145,11 +195,13 @@ export const MagicCanvas: React.FC = () => {
     if (!canvas || !ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    clearCanvasStrokes();
     setCanvasData(null);
-    
+    currentStroke.current = [];
+
     // Return focus to canvas after clearing
     canvas.focus();
-  }, [setCanvasData]);
+  }, [clearCanvasStrokes, setCanvasData]);
 
   // Set up event listeners for canvas
   useEffect(() => {
@@ -168,7 +220,7 @@ export const MagicCanvas: React.FC = () => {
     // Keyboard support for drawing
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement !== canvas) return;
-      
+
       // Allow Enter or Space to clear canvas
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();

@@ -18,38 +18,54 @@ export interface Creature {
   isGlitch: boolean;
 }
 
+// Stroke point for vector-based canvas
+export interface StrokePoint {
+  x: number;
+  y: number;
+}
+
+// Individual stroke path
+export interface StrokePath {
+  points: StrokePoint[];
+  color: string;
+}
+
 interface StoryState {
   // Potion levels (0-100)
   sillyLevel: number;
   spookyLevel: number;
   sleepyLevel: number;
-  
-  // Canvas
+
+  // Canvas - now using vector-based stroke paths
   canvasData: string | null;
-  
+  canvasStrokes: StrokePath[];
+
   // Generation state
   currentStory: string | null;
   currentImage: string | null;
   isGenerating: boolean;
   generationProgress: number;
   generationStatus: string;
-  
+
   // Glitch state
   isGlitch: boolean;
   glitchMessage: string | null;
   canCatch: boolean;
-  
+
   // Zoo inventory
   zoo: Creature[];
-  
+
   // Settings
   isMockMode: boolean;
-  
+
   // Actions
   setSillyLevel: (level: number) => void;
   setSpookyLevel: (level: number) => void;
   setSleepyLevel: (level: number) => void;
   setCanvasData: (data: string | null) => void;
+  setCanvasStrokes: (strokes: StrokePath[]) => void;
+  addCanvasStroke: (stroke: StrokePath) => void;
+  clearCanvasStrokes: () => void;
   setCurrentStory: (story: string | null) => void;
   setCurrentImage: (image: string | null) => void;
   setIsGenerating: (generating: boolean) => void;
@@ -96,6 +112,7 @@ export const useStoryStore = create<StoryState>()(
       spookyLevel: 30,
       sleepyLevel: 40,
       canvasData: null,
+      canvasStrokes: [],
       currentStory: null,
       currentImage: null,
       isGenerating: false,
@@ -106,19 +123,22 @@ export const useStoryStore = create<StoryState>()(
       canCatch: false,
       zoo: [],
       isMockMode: true,
-      
+
       // Actions
       setSillyLevel: (level) => set({ sillyLevel: Math.max(0, Math.min(100, level)) }),
       setSpookyLevel: (level) => set({ spookyLevel: Math.max(0, Math.min(100, level)) }),
       setSleepyLevel: (level) => set({ sleepyLevel: Math.max(0, Math.min(100, level)) }),
       setCanvasData: (data) => set({ canvasData: data }),
+      setCanvasStrokes: (strokes) => set({ canvasStrokes: strokes }),
+      addCanvasStroke: (stroke) => set((state) => ({ canvasStrokes: [...state.canvasStrokes, stroke] })),
+      clearCanvasStrokes: () => set({ canvasStrokes: [] }),
       setCurrentStory: (story) => set({ currentStory: story }),
       setCurrentImage: (image) => set({ currentImage: image }),
       setIsGenerating: (generating) => set({ isGenerating: generating }),
       setGenerationProgress: (progress) => set({ generationProgress: progress }),
       setGenerationStatus: (status) => set({ generationStatus: status }),
-      setGlitch: (isGlitch, message = null) => set({ 
-        isGlitch, 
+      setGlitch: (isGlitch, message = null) => set({
+        isGlitch,
         glitchMessage: message ?? (isGlitch ? GLITCH_MESSAGES[Math.floor(Math.random() * GLITCH_MESSAGES.length)] : null)
       }),
       setCanCatch: (canCatch) => set({ canCatch }),
