@@ -53,7 +53,8 @@ async function loadTransformers(): Promise<void> {
 
   try {
     // Use the web-specific minified build from jsDelivr
-    const cdnUrl = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0/dist/transformers.web.min.js';
+    // Use version 3.8.1 to match the installed package version
+    const cdnUrl = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.web.min.js';
 
     // Load via fetch and eval for better compatibility with modern workers
     try {
