@@ -82,7 +82,8 @@ async function loadModel(): Promise<Awaited<ReturnType<typeof pipeline>>> {
     } satisfies WorkerResponse);
 
     // Model configuration - using SmolLM-135M for stability in browser
-    const MODEL_ID = 'HuggingFaceTB/SmolLM-135M-Instruct';
+    // Use the ONNX community version which has the proper ONNX exported files
+    const MODEL_ID = 'onnx-community/SmolLM-135M-Instruct-ONNX';
 
     textGenerator = await pipeline('text-generation', MODEL_ID, {
       progress_callback: (progress: TransformersProgress) => {
