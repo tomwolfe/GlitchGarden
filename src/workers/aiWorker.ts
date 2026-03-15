@@ -81,8 +81,8 @@ async function loadModel(): Promise<Awaited<ReturnType<typeof pipeline>>> {
       },
     } satisfies WorkerResponse);
 
-    // Model configuration - using Qwen3.5-0.8B for better stability
-    const MODEL_ID = 'Qwen/Qwen3.5-0.8B';
+    // Model configuration - using SmolLM-135M for stability in browser
+    const MODEL_ID = 'HuggingFaceTB/SmolLM-135M-Instruct';
 
     textGenerator = await pipeline('text-generation', MODEL_ID, {
       progress_callback: (progress: TransformersProgress) => {
@@ -153,13 +153,8 @@ function buildPrompt(
   const personality =
     traits.length > 0 ? traits.join(', ') : 'ordinary';
 
-  // Build the prompt using Qwen-friendly format
-  const prompt = `<|im_start|>system
-You are a whimsical children's story writer. Write short, magical stories (2-3 sentences) for children.<|im_end|>
-<|im_start|>user
-Write a story about a ${personality} creature called a "${creature}". The user drew ${canvasAnalysis.description} which inspired this story. Make it fun and imaginative. Start with "Once upon a time" or similar.<|im_end|>
-<|im_start|>assistant
-`;
+  // Build the prompt for SmolLM-Instruct
+  const prompt = `Write a short, magical story (2-3 sentences) for children about a ${personality} creature called a "${creature}". The user drew ${canvasAnalysis.description} which inspired this story. Make it fun and imaginative. Start with "Once upon a time" or similar magical opening.`;
 
   return prompt;
 }
@@ -222,7 +217,6 @@ async function generateStoryWithAI(
         top_k: 30,
         do_sample: true,
         repetition_penalty: 1.2,
-        chat_template: 'chatml', // Use ChatML format for Qwen
       });
 
       // Check cancellation after generation completes
@@ -266,11 +260,11 @@ async function generateStoryWithAI(
       return story;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error('Unknown error');
-      
+
       // Check if it's a RangeError (memory/buffer issue)
       if (lastError.name === 'RangeError' || lastError.message.includes('offset is out of bounds')) {
         console.warn(`AI model RangeError (attempt ${attempt + 1}/${MAX_RETRIES + 1}):`, lastError.message);
-        
+
         if (attempt < MAX_RETRIES) {
           // Clear model cache and reload
           textGenerator = null;
@@ -281,16 +275,16 @@ async function generateStoryWithAI(
               status: `Reinitializing AI model (attempt ${attempt + 2}/${MAX_RETRIES + 1})...`,
             },
           } satisfies WorkerResponse);
-          
+
           // Wait a moment before retry
           await new Promise(resolve => setTimeout(resolve, 500));
-          
+
           // Reload the model
           await loadModel();
           continue;
         }
       }
-      
+
       // For non-RangeError or after max retries, rethrow
       throw lastError;
     }
