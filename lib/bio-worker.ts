@@ -1,9 +1,9 @@
 /**
  * Bio Worker - Web Worker Singleton for AI Creature Generation
- * Handles SmolLM model loading and inference using @xenova/transformers
+ * Handles SmolLM model loading and inference using @huggingface/transformers
  */
 
-import { pipeline, env } from '@xenova/transformers';
+import { pipeline, env } from '@huggingface/transformers';
 
 // Configure transformers.js to use local cache
 env.allowLocalModels = false;
