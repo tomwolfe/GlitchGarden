@@ -1,9 +1,9 @@
 /**
  * Bio Worker - Web Worker Singleton for AI Creature Generation
- * Handles SmolLM model loading and inference using @huggingface/transformers
+ * Handles SmolLM model loading and inference using @xenova/transformers
  */
 
-import { pipeline, env } from '@huggingface/transformers';
+import { pipeline, env } from '@xenova/transformers';
 
 // Configure transformers.js to use local cache
 env.allowLocalModels = false;
@@ -203,10 +203,10 @@ async function initializeModel(): Promise<void> {
   try {
     self.postMessage({
       type: 'PROGRESS',
-      payload: { message: 'Loading SmolLM-135M-Instruct model...', progress: 0 },
+      payload: { message: 'Loading DistilGPT-2 model...', progress: 0 },
     } as WorkerResponse);
 
-    generator = await pipeline('text-generation', 'HuggingFaceTB/SmolLM2-135M-Instruct', {
+    generator = await pipeline('text-generation', 'Xenova/distilgpt2', {
       progress_callback: (progress: any) => {
         if (progress.status === 'progress') {
           self.postMessage({
