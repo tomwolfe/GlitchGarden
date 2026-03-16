@@ -206,8 +206,8 @@ async function initializeModel(): Promise<void> {
       payload: { message: 'Loading SmolLM-135M-Instruct model...', progress: 0 },
     } as WorkerResponse);
 
-    generator = await pipeline('text-generation', 'onnx-community/SmolLM-135M-Instruct-ONNX', {
-      quantized: true,
+    generator = await pipeline('text-generation', 'HuggingFaceTB/SmolLM2-135M-Instruct', {
+      dtype: 'q4f16',
       progress_callback: (progress: any) => {
         if (progress.status === 'progress') {
           self.postMessage({
